@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+## Usage: deploy [DIRECTORY]
+
+set -eu
+
+dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+cargo_target_dir=${CARGO_TARGET_DIR:-$dir/target}
+cd "$dir"
+
+target_dir=${1:-~/bin}
+
+cargo test
+cargo fmt -- --check
+
+cargo build --release
+
+# strip out debug symbols
+strip "$cargo_target_dir"/release/tlsign
+
+cp "$cargo_target_dir"/release/tlsign "$target_dir"/tlsign
+echo " ✓ Deployed to $target_dir/tlsign" >&2
