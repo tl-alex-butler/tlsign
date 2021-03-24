@@ -9,9 +9,9 @@ use uuid::Uuid;
 /// A small command line interface to sign POST requests for Payouts/Paydirect API.
 #[derive(Clap)]
 struct Command {
-    /// The filename of the payload you want to sign, in JSON format.
+    /// The payload you want to sign.
     #[clap(long)]
-    body: PathBuf,
+    body: String,
     /// The filename of the Elliptic Curve private key used to sign, in PEM format.
     #[clap(long)]
     key: PathBuf,
@@ -23,17 +23,8 @@ struct Command {
 }
 
 impl Command {
-    /// Parse the JSON payload from the specified file.
-    pub fn payload(&self) -> Result<Value, anyhow::Error> {
-        let raw_payload =
-            std::fs::read(&self.body).context("Failed to read the request payload file.")?;
-        let payload: Value = serde_json::from_slice(&raw_payload)
-            .context("Failed to parse the request payload as JSON.")?;
-        Ok(payload)
-    }
-
     /// Parse the EC private key from the specified file.
-    pub fn private_key(&self) -> Result<EcKey<Private>, anyhow::Error> {
+    pub fn private_key(&self) -> anyhow::Result<EcKey<Private>> {
         let raw_private_key =
             std::fs::read(&self.key).context("Failed to read the private key file.")?;
         let private_key = openssl::pkey::PKey::private_key_from_pem(&raw_private_key)
@@ -52,19 +43,17 @@ pub struct JwsPayload {
     body: Value,
 }
 
-pub fn main() -> Result<(), anyhow::Error> {
+pub fn main() -> anyhow::Result<()> {
     let options = Command::parse();
 
     let jws_header = json!({
         "alg": "ES512",
         "kid": options.kid.to_string()
     });
-    let jws_payload = options.payload()?;
-    let jws_payload = serde_json::to_string(&jws_payload)?;
     let private_key = options.private_key()?;
     // println!("Request payload:\n{}\n", &jws_payload);
 
-    let jws = get_jws(&jws_header, &jws_payload, private_key)?;
+    let jws = get_jws(&jws_header, options.body.as_bytes(), private_key)?;
     // println!("JWS:\n{}\n", jws);
 
     let parts = jws.split(".").collect::<Vec<_>>();
@@ -80,20 +69,20 @@ pub fn main() -> Result<(), anyhow::Error> {
 /// Check section A.4 of RFC7515 for the details: https://www.rfc-editor.org/rfc/rfc7515.txt
 pub fn get_jws(
     jws_header: &Value,
-    jws_payload: &str,
+    jws_payload: &[u8],
     pkey: EcKey<Private>,
 ) -> Result<String, anyhow::Error> {
     let to_be_signed = format!(
         "{}.{}",
         base64_encode(serde_json::to_string(&jws_header)?.as_bytes()),
-        base64_encode(jws_payload.as_bytes()),
+        base64_encode(jws_payload),
     );
     let signature = sign_es512(to_be_signed.as_bytes(), pkey)?;
 
     let jws = format!(
         "{}.{}.{}",
         base64_encode(serde_json::to_string(&jws_header)?.as_bytes()),
-        base64_encode(jws_payload.as_bytes()),
+        base64_encode(jws_payload),
         signature
     );
     Ok(jws)
