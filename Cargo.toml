@@ -3,6 +3,7 @@ name = "tlsign"
 version = "0.1.0"
 authors = ["Alex Butler <alex.butler@truelayer.com>"]
 edition = "2018"
+publish = false
 
 [dependencies]
 openssl = "0.10"
